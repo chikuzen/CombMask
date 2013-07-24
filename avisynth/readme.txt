@@ -1,4 +1,4 @@
-CombMask - Combmask generate filter for Avisynth2.6x
+CombMask - Combmask create filter for Avisynth2.6x
 
 
 description:
@@ -6,27 +6,49 @@ description:
     used by other filters like MaskTools2.
     The mask consists of binaries of 0(not combed) and 255(combed).
 
+    MaskedMerge is an exclusive masking filter for CombMask. This is often faster
+    than MaskTools2's mt_merge().
+
 
 syntax:
-    CombMask(clip, int cthresh, int mthresh, bool sse2)
+    CombMask(clip, int cthresh, int mthresh, int mi, bool sse2)
 
-    cthresh(0 to 255, default is 6):
-        spatial combing threshold.
+        cthresh(0 to 255, default is 6):
+            spatial combing threshold.
 
-    mthresh(0 to 255, default is 9):
-        motion adaptive threshold.
+        mthresh(0 to 255, default is 9):
+            motion adaptive threshold.
+
+        mi(0 to 256, default is 80):
+            The # of combed pixels inside any of 16x16 size blocks on the frame
+            for the frame to be detected as combed.
+            This information is used by MaskedMerge.
+
+        sse2(default true):
+            enable SSE2 intrinsic code(faster).
+
+
+    MaskedMerge(clip base, clip alt, clip mask, bool sse2)
+
+        base: base clip.
+
+        alt: alternate clip which will be merged to base.
+
+        mask: mask clip.
+
+        sse2(default true):
+            enable SSE2 intrinsic code(a bit faster).
 
 
 usage:
 
     LoadPlugin("CombMask.dll)
-    LoadPlugin("mt_masktools-26.dll")
-
     src = SourceFilter("foo\bar\fizz\buzz")
     deint = src.some_deinterlace_filter()
     deint2 = src.another_filter()
     mask = deint.CombMask()
-    last = deint.mt_merge(deint2, mask, chroma="process")
+    last = deint.MaskedMerge(deint2, mask)
+    return last
 
 
 reqirement:

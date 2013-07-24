@@ -26,12 +26,14 @@
 #include "avisynth.h"
 
 #define CMASK_VERSION "0.0.1"
-#define RSIZE sizeof(__m128i);
-#define USIZE sizeof(unsigned);
+#define RSIZE sizeof(__m128i)
+#define USIZE sizeof(unsigned)
 
 
 static const AVS_Linkage* AVS_linkage = 0;
 
+static int* is_combed = 0;
+static int num_frames = 0;
 
 /******************************************************************************
                                 CombMask
@@ -95,7 +97,8 @@ write_mmask_sse2(int num_planes, int mthresh, PVideoFrame& src,
 
 
 static void __stdcall
-write_mmask_c(const int num_planes, const int mthresh, PVideoFrame& src, PVideoFrame& prev)
+write_mmask_c(const int num_planes, const int mthresh, PVideoFrame& src,
+              PVideoFrame& prev)
 {
     const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
 
@@ -344,10 +347,82 @@ c_and_m_c(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 }
 
 
+static void __stdcall
+check_combed_sse2(PVideoFrame& cmask, int n, int mi)
+{
+    const int width = cmask->GetRowSize(PLANAR_Y) / RSIZE;
+    const int height = cmask->GetHeight(PLANAR_Y) / 16;
+    const int pitch_0 = cmask->GetPitch(PLANAR_Y) / RSIZE;
+    const int pitch_1 = pitch_0 * 16;
+
+    const __m128i* srcp = (__m128i*)cmask->GetReadPtr(PLANAR_Y);
+
+    __m128i all1 = _mm_setzero_si128();
+    all1 = _mm_cmpeq_epi32(all1, all1);
+    const __m128i one = _mm_set1_epi8((char)1);
+
+    __declspec(align(16)) __int64 array[2];
+    __m128i* arr = (__m128i*)array;
+
+    is_combed[n] = 2;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            __m128i sum = _mm_setzero_si128();
+            for (int i = 0; i < 16; i++) {
+                __m128i xmm0 = _mm_load_si128(srcp + x + pitch_0 * i);
+                sum = _mm_adds_epi8(sum, xmm0);
+            }
+            sum = _mm_xor_si128(sum, all1);
+            sum = _mm_add_epi8(sum, one);
+            sum = _mm_sad_epu8(sum, _mm_setzero_si128());
+            _mm_store_si128(arr, sum);
+
+            if (array[0] + array[1] > mi) {
+                is_combed[n] = 1;
+                return;
+            }
+        }
+        srcp += pitch_1;
+    }
+}
+
+
+static void __stdcall
+check_combed_c(PVideoFrame& cmask, int n, int mi)
+{
+    const int width = (cmask->GetRowSize(PLANAR_Y) / 16) * 16;
+    const int height = cmask->GetHeight(PLANAR_Y) / 16;
+    const int pitch_0 = cmask->GetPitch(PLANAR_Y);
+    const int pitch_1 = pitch_0 * 16;
+
+    const BYTE* srcp = cmask->GetReadPtr(PLANAR_Y);
+
+    is_combed[n] = 2;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x += 16) {
+            int count = 0;
+            for (int i = 0; i < 16; i++) {
+                for (int j = 0; j < 16; j++) {
+                    count += !!srcp[x + j + i * pitch_0];
+                }
+            }
+            if (count > mi) {
+                is_combed[n] = 1;
+                return;
+            }
+        }
+        srcp += pitch_1;
+    }
+}
+
+
 class CombMask : public GenericVideoFilter {
 
     int cthresh;
     int mthresh;
+    int mi;
     int num_planes;
 
     void (__stdcall *write_motion_mask)(int num_planes, int mthresh,
@@ -356,16 +431,19 @@ class CombMask : public GenericVideoFilter {
                                       PVideoFrame& src, PVideoFrame& dst);
     void (__stdcall *comb_and_motion)(int num_planes, PVideoFrame& cmask,
                                       PVideoFrame& mmask);
+    void (__stdcall *check_combed)(PVideoFrame& cmask, int n, int mi);
 
 public:
-    CombMask(PClip c, int cth, int mth, bool sse2, IScriptEnvironment* env);
-    ~CombMask() { }
+    CombMask(PClip c, int cth, int mth, int _mi, bool sse2,
+             IScriptEnvironment* env);
+    ~CombMask();
     PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
 };
 
 
-CombMask::CombMask(PClip c, int cth, int mth, bool sse2, IScriptEnvironment* env)
-    : GenericVideoFilter(c), cthresh(cth), mthresh(mth)
+CombMask::
+CombMask(PClip c, int cth, int mth, int _mi, bool sse2, IScriptEnvironment* env)
+    : GenericVideoFilter(c), cthresh(cth), mthresh(mth), mi(_mi)
 {
     if (cthresh < 0 || cthresh > 255) {
         env->ThrowError("CombMask: cthresh must be between 0 and 255.");
@@ -373,6 +451,10 @@ CombMask::CombMask(PClip c, int cth, int mth, bool sse2, IScriptEnvironment* env
 
     if (mthresh < 0 || mthresh > 255) {
         env->ThrowError("CombMask: mthresh must be between 0 and 255.");
+    }
+
+    if (mi < 0 || mi > 256) {
+        env->ThrowError("CombMask: mi must be between 0 and 256.");
     }
 
     if (!vi.IsPlanar()) {
@@ -388,6 +470,22 @@ CombMask::CombMask(PClip c, int cth, int mth, bool sse2, IScriptEnvironment* env
     write_motion_mask = sse2 ? write_mmask_sse2 : write_mmask_c;
     write_comb_mask = sse2 ? write_cmask_sse2 : write_cmask_c;
     comb_and_motion = sse2 ? c_and_m_sse2 : c_and_m_c;
+    check_combed = sse2 ? check_combed_sse2 : check_combed_c;
+
+    is_combed = (int*)calloc(vi.num_frames, sizeof(int));
+    if (!is_combed) {
+        env->ThrowError("CombMask: failed to allocate flag buffer.");
+    }
+    num_frames = vi.num_frames - 1;
+}
+
+
+CombMask::~CombMask()
+{
+    if (is_combed) {
+        free(is_combed);
+        is_combed = 0;
+    }
 }
 
 
@@ -404,6 +502,8 @@ PVideoFrame __stdcall CombMask::GetFrame(int n, IScriptEnvironment* env)
         comb_and_motion(num_planes, cmask, mmask);
     }
 
+    check_combed_sse2(cmask, n, mi);
+
     return cmask;
 }
 
@@ -412,7 +512,7 @@ static AVSValue __cdecl
 create_combmask(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
     return new CombMask(args[0].AsClip(),  args[1].AsInt(6), args[2].AsInt(9),
-                         args[3].AsBool(true), env);
+                        args[3].AsInt(80), args[4].AsBool(true), env);
 }
 
 /****************************************************************************
@@ -460,7 +560,8 @@ merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt,
 
 
 static void __stdcall
-merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst)
+merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt,
+               PVideoFrame& mask, PVideoFrame& dst)
 {
     const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
 
@@ -498,7 +599,9 @@ class MaskedMerge : public GenericVideoFilter {
     PClip maskc;
     int num_planes;
 
-    void (__stdcall *merge_frames)(int mum_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst);
+    void (__stdcall *merge_frames)(int mum_planes, PVideoFrame& src,
+                                   PVideoFrame& alt, PVideoFrame& mask,
+                                   PVideoFrame& dst);
 
 public:
     MaskedMerge(PClip c, PClip a, PClip m, bool sse2, IScriptEnvironment* env);
@@ -536,8 +639,12 @@ MaskedMerge::MaskedMerge(PClip c, PClip a, PClip m, bool sse2, IScriptEnvironmen
 PVideoFrame __stdcall MaskedMerge::GetFrame(int n, IScriptEnvironment* env)
 {
     PVideoFrame src = child->GetFrame(n, env);
-    PVideoFrame alt = altc->GetFrame(n, env);
     PVideoFrame mask = maskc->GetFrame(n, env);
+    if (n <= num_frames && is_combed && is_combed[n] != 1) {
+        return src;
+    }
+
+    PVideoFrame alt = altc->GetFrame(n, env);
     PVideoFrame dst = env->NewVideoFrame(vi);
 
     merge_frames(num_planes, src, alt, mask, dst);
@@ -567,7 +674,9 @@ extern "C" __declspec(dllexport) const char* __stdcall
 AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors)
 {
     AVS_linkage = vectors;
-    env->AddFunction("CombMask", "c[cthresh]i[mthresh]i[sse2]b", create_combmask, 0);
-    env->AddFunction("MaskedMerge", "[base]c[alt]c[mask]c[sse2]b", create_maskedmerge, 0);
+    env->AddFunction("CombMask", "c[cthresh]i[mthresh]i[MI]i[sse2]b",
+                     create_combmask, 0);
+    env->AddFunction("MaskedMerge", "[base]c[alt]c[mask]c[sse2]b",
+                     create_maskedmerge, 0);
     return "CombMask filter for Avisynth2.6 version "CMASK_VERSION;
 }
