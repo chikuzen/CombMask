@@ -26,26 +26,32 @@
 #include "avisynth.h"
 
 #define CMASK_VERSION "0.0.1"
+#define RSIZE sizeof(__m128i);
+#define USIZE sizeof(unsigned);
+
 
 static const AVS_Linkage* AVS_linkage = 0;
 
-/***************************************************************************
+
+/******************************************************************************
                                 CombMask
-****************************************************************************/
+******************************************************************************/
 
 static void __stdcall
-write_mmask_sse2(int num_planes, int mthresh, PVideoFrame& src, PVideoFrame& prev)
+write_mmask_sse2(int num_planes, int mthresh, PVideoFrame& src,
+                 PVideoFrame& prev)
 {
     const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
+
     const __m128i xmth = _mm_set1_epi8((char)mthresh);
     const __m128i zero = _mm_setzero_si128();
     const __m128i all1 = _mm_cmpeq_epi32(zero, zero);
 
     for (int p = 0; p < num_planes; p++) {
-        const int width = (src->GetRowSize(planes[p]) + 15) / 16;
+        const int width = (src->GetRowSize(planes[p]) + RSIZE - 1) / RSIZE;
         const int height = src->GetHeight(planes[p]);
-        const int src_pitch = src->GetPitch(planes[p]) / 16;
-        const int prev_pitch = prev->GetPitch(planes[p]) / 16;
+        const int src_pitch = src->GetPitch(planes[p]) / RSIZE;
+        const int prev_pitch = prev->GetPitch(planes[p]) / RSIZE;
 
         const __m128i* srcp = (__m128i*)src->GetReadPtr(planes[p]);
         __m128i* prevp = (__m128i*)prev->GetWritePtr(planes[p]);
@@ -110,12 +116,12 @@ write_mmask_c(const int num_planes, const int mthresh, PVideoFrame& src, PVideoF
             prvp += prv_pitch;
         }
 
-        width = (width + 3) / 4;
-        prv_pitch /= 4;
+        width = (width + USIZE - 1) / USIZE;
+        prv_pitch /= USIZE;
 
-        DWORD* prvt = (DWORD*)prev->GetWritePtr(planes[p]);
-        DWORD* prvc = prvt + prv_pitch;
-        DWORD* prvb = prvc + prv_pitch;
+        unsigned* prvt = (unsigned*)prev->GetWritePtr(planes[p]);
+        unsigned* prvc = prvt + prv_pitch;
+        unsigned* prvb = prvc + prv_pitch;
 
         for (int y = 1; y < height - 1; y++) {
             for (int x = 0; x < width; x++) {
@@ -171,8 +177,8 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
     const __m128i zero = _mm_setzero_si128();
 
     for (int p = 0; p < num_planes; p++) {
-        const int src_pitch = src->GetPitch(planes[p]) / 16;
-        const int width = (src->GetRowSize(planes[p]) + 15) / 16;
+        const int src_pitch = src->GetPitch(planes[p]) / RSIZE;
+        const int width = (src->GetRowSize(planes[p]) + RSIZE - 1) / RSIZE;
         const int height = src->GetHeight(planes[p]);
 
         const __m128i* srcpc = (__m128i*)src->GetReadPtr(planes[p]);
@@ -182,9 +188,9 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
         const __m128i* srcpe = srcpd + src_pitch;
 
         __m128i* dstp = (__m128i*)dst->GetWritePtr(planes[p]);
-        const int dst_pitch = dst->GetPitch(planes[p]) / 16;
+        const int dst_pitch = dst->GetPitch(planes[p]) / RSIZE;
 
-        memset(dstp, 0, dst_pitch * height * 16);
+        memset(dstp, 0, dst_pitch * height * RSIZE);
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -192,16 +198,20 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
                 __m128i xmm1 = _mm_load_si128(srcpb + x);
                 __m128i xmm2 = _mm_load_si128(srcpd + x);
 
-                __m128i xmm3 = _mm_or_si128(_mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm0, xmm1), xcth)),
-                                            _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm0, xmm2), xcth)));
+                __m128i xmm3 = _mm_or_si128(
+                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm0, xmm1), xcth)),
+                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm0, xmm2), xcth)));
 
-                __m128i xmm4 = _mm_or_si128(_mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm1, xmm0), xcth)),
-                                            _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm2, xmm0), xcth)));
+                __m128i xmm4 = _mm_or_si128(
+                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm1, xmm0), xcth)),
+                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm2, xmm0), xcth)));
 
                 xmm3 = _mm_and_si128(xmm3, xmm4);
 
-                xmm4 = _mm_add_epi16(_mm_unpacklo_epi8(xmm1, zero), _mm_unpacklo_epi8(xmm2, zero)); // lo of (b+d)
-                xmm1 = _mm_add_epi16(_mm_unpackhi_epi8(xmm1, zero), _mm_unpackhi_epi8(xmm2, zero)); // hi of (b+d)
+                xmm4 = _mm_add_epi16(_mm_unpacklo_epi8(xmm1, zero),
+                                     _mm_unpacklo_epi8(xmm2, zero)); // lo of (b+d)
+                xmm1 = _mm_add_epi16(_mm_unpackhi_epi8(xmm1, zero),
+                                     _mm_unpackhi_epi8(xmm2, zero)); // hi of (b+d)
                 xmm4 = _mm_add_epi16(xmm4, _mm_add_epi16(xmm4, xmm4));      // lo of 3*(b+d)
                 xmm1 = _mm_add_epi16(xmm1, _mm_add_epi16(xmm1, xmm1));      // hi of 3*(b+d)
 
@@ -259,8 +269,13 @@ write_cmask_c(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
             for (int x = 0; x < width; x++) {
                 int d1 = srcpc[x] - srcpb[x];
                 int d2 = srcpc[x] - srcpd[x];
-                if ((d1 > cthresh && d2 > cthresh) || (d1 < -cthresh && d2 < -cthresh)) {
-                    if (abs(srcpa[x] + 4 * srcpc[x] + srcpe[x] - 3 * (srcpb[x] + srcpd[x])) > cthresh * 6) {
+
+                if ((d1 > cthresh && d2 > cthresh) ||
+                    (d1 < -cthresh && d2 < -cthresh)) {
+
+                    if (abs(srcpa[x] + 4 * srcpc[x] + srcpe[x]
+                        - 3 * (srcpb[x] + srcpd[x])) > cthresh * 6) {
+
                         dstp[x] = 0xFF;
                     }
                 }
@@ -285,9 +300,9 @@ c_and_m_sse2(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
         __m128i* cp = (__m128i*)cmask->GetWritePtr(planes[p]);
         const __m128i* mp = (__m128i*)mmask->GetReadPtr(planes[p]);
 
-        const int pitch_c = cmask->GetPitch(planes[p]) / 16;
-        const int pitch_m = mmask->GetPitch(planes[p]) / 16;
-        const int width = (cmask->GetRowSize(planes[p]) + 15) / 16;
+        const int pitch_c = cmask->GetPitch(planes[p]) / RSIZE;
+        const int pitch_m = mmask->GetPitch(planes[p]) / RSIZE;
+        const int width = (cmask->GetRowSize(planes[p]) + RSIZE - 1) / RSIZE;
         const int height = cmask->GetHeight(planes[p]);
 
         for (int y = 0; y < height; y++) {
@@ -310,12 +325,12 @@ c_and_m_c(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
     const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
 
     for (int p = 0; p < num_planes; p++) {
-        DWORD* cmskp = (DWORD*)cmask->GetWritePtr(planes[p]);
-        const DWORD* mmskp = (DWORD*)mmask->GetReadPtr(planes[p]);
+        unsigned* cmskp = (unsigned*)cmask->GetWritePtr(planes[p]);
+        const unsigned* mmskp = (unsigned*)mmask->GetReadPtr(planes[p]);
 
-        const int pitch_c = cmask->GetPitch(planes[p]) / 4;
-        const int pitch_m = mmask->GetPitch(planes[p]) / 4;
-        const int width = (cmask->GetRowSize(planes[p]) + 3) / 4;
+        const int pitch_c = cmask->GetPitch(planes[p]) / USIZE;
+        const int pitch_m = mmask->GetPitch(planes[p]) / USIZE;
+        const int width = (cmask->GetRowSize(planes[p]) + USIZE - 1) / USIZE;
         const int height = cmask->GetHeight(planes[p]);
 
         for (int y = 0; y < height; y++) {
@@ -330,13 +345,17 @@ c_and_m_c(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 
 
 class CombMask : public GenericVideoFilter {
+
     int cthresh;
     int mthresh;
     int num_planes;
 
-    void (__stdcall *write_motion_mask)(int num_planes, int mthresh, PVideoFrame& src, PVideoFrame& prev);
-    void (__stdcall *write_comb_mask)(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst);
-    void (__stdcall *comb_and_motion)(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask);
+    void (__stdcall *write_motion_mask)(int num_planes, int mthresh,
+                                        PVideoFrame& src, PVideoFrame& prev);
+    void (__stdcall *write_comb_mask)(int num_planes, int cthresh,
+                                      PVideoFrame& src, PVideoFrame& dst);
+    void (__stdcall *comb_and_motion)(int num_planes, PVideoFrame& cmask,
+                                      PVideoFrame& mmask);
 
 public:
     CombMask(PClip c, int cth, int mth, bool sse2, IScriptEnvironment* env);
@@ -401,7 +420,8 @@ create_combmask(AVSValue args, void* user_data, IScriptEnvironment* env)
 ******************************************************************************/
 
 static void __stdcall
-merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst)
+merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt,
+                  PVideoFrame& mask, PVideoFrame& dst)
 {
     const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
 
@@ -411,13 +431,13 @@ merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFram
         const __m128i* mskp = (__m128i*)mask->GetReadPtr(planes[p]);
         __m128i* dstp = (__m128i*)dst->GetWritePtr(planes[p]);
 
-        int width = (src->GetRowSize(planes[p]) + 15) / 16;
+        int width = (src->GetRowSize(planes[p]) + RSIZE - 1) / RSIZE;
         int height = src->GetHeight(planes[p]);
 
-        int src_pitch = src->GetPitch(planes[p]) / 16;
-        int alt_pitch = alt->GetPitch(planes[p]) / 16;
-        int msk_pitch = mask->GetPitch(planes[p]) / 16;
-        int dst_pitch = dst->GetPitch(planes[p]) / 16;
+        int src_pitch = src->GetPitch(planes[p]) / RSIZE;
+        int alt_pitch = alt->GetPitch(planes[p]) / RSIZE;
+        int msk_pitch = mask->GetPitch(planes[p]) / RSIZE;
+        int dst_pitch = dst->GetPitch(planes[p]) / RSIZE;
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -443,7 +463,6 @@ static void __stdcall
 merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst)
 {
     const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-    const int usize = sizeof(unsigned);
 
     for (int p = 0; p < num_planes; p++) {
         const unsigned* srcp = (unsigned*)src->GetReadPtr(planes[p]);
@@ -451,13 +470,13 @@ merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& 
         const unsigned* mskp = (unsigned*)mask->GetReadPtr(planes[p]);
         unsigned* dstp = (unsigned*)dst->GetWritePtr(planes[p]);
 
-        int width = (src->GetRowSize(planes[p]) + usize - 1) / usize;
+        int width = (src->GetRowSize(planes[p]) + USIZE - 1) / USIZE;
         int height = src->GetHeight(planes[p]);
 
-        int src_pitch = src->GetPitch(planes[p]) / usize;
-        int alt_pitch = alt->GetPitch(planes[p]) / usize;
-        int msk_pitch = mask->GetPitch(planes[p]) / usize;
-        int dst_pitch = dst->GetPitch(planes[p]) / usize;
+        int src_pitch = src->GetPitch(planes[p]) / USIZE;
+        int alt_pitch = alt->GetPitch(planes[p]) / USIZE;
+        int msk_pitch = mask->GetPitch(planes[p]) / USIZE;
+        int dst_pitch = dst->GetPitch(planes[p]) / USIZE;
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
