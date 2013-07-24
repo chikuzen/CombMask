@@ -357,8 +357,8 @@ check_combed_sse2(PVideoFrame& cmask, int n, int mi)
 
     const __m128i* srcp = (__m128i*)cmask->GetReadPtr(PLANAR_Y);
 
-    __m128i all1 = _mm_setzero_si128();
-    all1 = _mm_cmpeq_epi32(all1, all1);
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i all1 = _mm_cmpeq_epi32(zero, zero);
     const __m128i one = _mm_set1_epi8((char)1);
 
     __declspec(align(16)) __int64 array[2];
@@ -368,17 +368,19 @@ check_combed_sse2(PVideoFrame& cmask, int n, int mi)
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            __m128i sum = _mm_setzero_si128();
+            __m128i sum = zero;
+
             for (int i = 0; i < 16; i++) {
-                __m128i xmm0 = _mm_load_si128(srcp + x + pitch_0 * i);
-                sum = _mm_adds_epi8(sum, xmm0);
+                // 0xFF == -1, thus the range of each bytes of sum is -16 to 0.
+                sum = _mm_add_epi8(sum, _mm_load_si128(srcp + x + pitch_0 * i));
             }
+
             sum = _mm_xor_si128(sum, all1);
-            sum = _mm_add_epi8(sum, one);
-            sum = _mm_sad_epu8(sum, _mm_setzero_si128());
+            sum = _mm_add_epi8(sum, one);       // -x = ~x + 1
+            sum = _mm_sad_epu8(sum, zero);
             _mm_store_si128(arr, sum);
 
-            if (array[0] + array[1] > mi) {
+            if (array[0] > mi || array[1] > mi) {
                 is_combed[n] = 1;
                 return;
             }
@@ -391,7 +393,7 @@ check_combed_sse2(PVideoFrame& cmask, int n, int mi)
 static void __stdcall
 check_combed_c(PVideoFrame& cmask, int n, int mi)
 {
-    const int width = (cmask->GetRowSize(PLANAR_Y) / 16) * 16;
+    const int width = (cmask->GetRowSize(PLANAR_Y) / 8) * 8;
     const int height = cmask->GetHeight(PLANAR_Y) / 16;
     const int pitch_0 = cmask->GetPitch(PLANAR_Y);
     const int pitch_1 = pitch_0 * 16;
@@ -401,10 +403,10 @@ check_combed_c(PVideoFrame& cmask, int n, int mi)
     is_combed[n] = 2;
 
     for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x += 16) {
+        for (int x = 0; x < width; x += 8) {
             int count = 0;
             for (int i = 0; i < 16; i++) {
-                for (int j = 0; j < 16; j++) {
+                for (int j = 0; j < 8; j++) {
                     count += !!srcp[x + j + i * pitch_0];
                 }
             }
@@ -453,8 +455,8 @@ CombMask(PClip c, int cth, int mth, int _mi, bool sse2, IScriptEnvironment* env)
         env->ThrowError("CombMask: mthresh must be between 0 and 255.");
     }
 
-    if (mi < 0 || mi > 256) {
-        env->ThrowError("CombMask: mi must be between 0 and 256.");
+    if (mi < 0 || mi > 128) {
+        env->ThrowError("CombMask: mi must be between 0 and 128.");
     }
 
     if (!vi.IsPlanar()) {
@@ -512,7 +514,7 @@ static AVSValue __cdecl
 create_combmask(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
     return new CombMask(args[0].AsClip(),  args[1].AsInt(6), args[2].AsInt(9),
-                        args[3].AsInt(80), args[4].AsBool(true), env);
+                        args[3].AsInt(40), args[4].AsBool(true), env);
 }
 
 /****************************************************************************

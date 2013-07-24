@@ -19,8 +19,8 @@ syntax:
         mthresh(0 to 255, default is 9):
             motion adaptive threshold.
 
-        mi(0 to 256, default is 80):
-            The # of combed pixels inside any of 16x16 size blocks on the frame
+        mi(0 to 128, default is 40):
+            The # of combed pixels inside any of 8x16 size blocks on the Y-plane
             for the frame to be detected as combed.
             This information is used by MaskedMerge.
 
