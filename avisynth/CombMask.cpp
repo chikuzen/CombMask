@@ -29,6 +29,9 @@
 
 static const AVS_Linkage* AVS_linkage = 0;
 
+/***************************************************************************
+                                CombMask
+****************************************************************************/
 
 static void __stdcall
 write_mmask_sse2(int num_planes, int mthresh, PVideoFrame& src, PVideoFrame& prev)
@@ -393,11 +396,159 @@ create_combmask(AVSValue args, void* user_data, IScriptEnvironment* env)
                          args[3].AsBool(true), env);
 }
 
+/****************************************************************************
+                                MaskedMerge
+******************************************************************************/
+
+static void __stdcall
+merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst)
+{
+    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
+
+    for (int p = 0; p < num_planes; p++) {
+        const __m128i* srcp = (__m128i*)src->GetReadPtr(planes[p]);
+        const __m128i* altp = (__m128i*)alt->GetReadPtr(planes[p]);
+        const __m128i* mskp = (__m128i*)mask->GetReadPtr(planes[p]);
+        __m128i* dstp = (__m128i*)dst->GetWritePtr(planes[p]);
+
+        int width = (src->GetRowSize(planes[p]) + 15) / 16;
+        int height = src->GetHeight(planes[p]);
+
+        int src_pitch = src->GetPitch(planes[p]) / 16;
+        int alt_pitch = alt->GetPitch(planes[p]) / 16;
+        int msk_pitch = mask->GetPitch(planes[p]) / 16;
+        int dst_pitch = dst->GetPitch(planes[p]) / 16;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                __m128i xsrc = _mm_load_si128(srcp + x);
+                __m128i xalt = _mm_load_si128(altp + x);
+                __m128i xmsk = _mm_load_si128(mskp + x);
+
+                xsrc = _mm_andnot_si128(xmsk, xsrc);
+                xalt = _mm_and_si128(xalt, xmsk);
+                xsrc = _mm_or_si128(xsrc, xalt);
+                _mm_store_si128(dstp + x, xsrc);
+            }
+            srcp += src_pitch;
+            altp += alt_pitch;
+            mskp += msk_pitch;
+            dstp += dst_pitch;
+        }
+    }
+}
+
+
+static void __stdcall
+merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst)
+{
+    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
+    const int usize = sizeof(unsigned);
+
+    for (int p = 0; p < num_planes; p++) {
+        const unsigned* srcp = (unsigned*)src->GetReadPtr(planes[p]);
+        const unsigned* altp = (unsigned*)alt->GetReadPtr(planes[p]);
+        const unsigned* mskp = (unsigned*)mask->GetReadPtr(planes[p]);
+        unsigned* dstp = (unsigned*)dst->GetWritePtr(planes[p]);
+
+        int width = (src->GetRowSize(planes[p]) + usize - 1) / usize;
+        int height = src->GetHeight(planes[p]);
+
+        int src_pitch = src->GetPitch(planes[p]) / usize;
+        int alt_pitch = alt->GetPitch(planes[p]) / usize;
+        int msk_pitch = mask->GetPitch(planes[p]) / usize;
+        int dst_pitch = dst->GetPitch(planes[p]) / usize;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                dstp[x] = (srcp[x] & (~mskp[x])) | (altp[x] & mskp[x]);
+            }
+            srcp += src_pitch;
+            altp += alt_pitch;
+            mskp += msk_pitch;
+            dstp += dst_pitch;
+        }
+    }
+
+}
+
+
+class MaskedMerge : public GenericVideoFilter {
+
+    PClip altc;
+    PClip maskc;
+    int num_planes;
+
+    void (__stdcall *merge_frames)(int mum_planes, PVideoFrame& src, PVideoFrame& alt, PVideoFrame& mask, PVideoFrame& dst);
+
+public:
+    MaskedMerge(PClip c, PClip a, PClip m, bool sse2, IScriptEnvironment* env);
+    ~MaskedMerge() {}
+    PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
+};
+
+
+MaskedMerge::MaskedMerge(PClip c, PClip a, PClip m, bool sse2, IScriptEnvironment* env)
+    : GenericVideoFilter(c), altc(a), maskc(m)
+{
+    if (!vi.IsPlanar()) {
+        env->ThrowError("MaskedMerge: planar format only.");
+    }
+
+    const VideoInfo& a_vi = altc->GetVideoInfo();
+    const VideoInfo& m_vi = maskc->GetVideoInfo();
+    if (!vi.IsSameColorspace(a_vi) || !vi.IsSameColorspace(m_vi)) {
+        env->ThrowError("MaskedMerge: unmatch colorspaces.");
+    }
+    if (vi.width != a_vi.width || vi.width != m_vi.width ||
+        vi.height != a_vi.height || vi.height != m_vi.height) {
+        env->ThrowError("MaskedMerge: unmatch resolutions.");
+    }
+
+    num_planes = vi.IsY8() ? 1 : 3;
+
+    if (!(env->GetCPUFlags() & CPUF_SSE2) && sse2) {
+        sse2 = false;
+    }
+    merge_frames = sse2 ? merge_frames_sse2 : merge_frames_c;
+}
+
+
+PVideoFrame __stdcall MaskedMerge::GetFrame(int n, IScriptEnvironment* env)
+{
+    PVideoFrame src = child->GetFrame(n, env);
+    PVideoFrame alt = altc->GetFrame(n, env);
+    PVideoFrame mask = maskc->GetFrame(n, env);
+    PVideoFrame dst = env->NewVideoFrame(vi);
+
+    merge_frames(num_planes, src, alt, mask, dst);
+
+    return dst;
+}
+
+
+static AVSValue __cdecl
+create_maskedmerge(AVSValue args, void* user_data, IScriptEnvironment* env)
+{
+    if (!args[0].Defined()) {
+        env->ThrowError("MaskedMerge: base clip is not set.");
+    }
+    if (!args[1].Defined()) {
+        env->ThrowError("MaskedMerge: alt clip is not set.");
+    }
+    if (!args[2].Defined()) {
+        env->ThrowError("MaskedMerge: mask clip is not set.");
+    }
+    return new MaskedMerge(args[0].AsClip(), args[1].AsClip(),
+                           args[2].AsClip(), args[3].AsBool(true), env);
+}
+
 
 extern "C" __declspec(dllexport) const char* __stdcall
 AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors)
 {
     AVS_linkage = vectors;
     env->AddFunction("CombMask", "c[cthresh]i[mthresh]i[sse2]b", create_combmask, 0);
+    env->AddFunction("MaskedMerge", "[base]c[alt]c[mask]c[sse2]b", create_maskedmerge, 0);
     return "CombMask filter for Avisynth2.6 version "CMASK_VERSION;
 }
