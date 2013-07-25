@@ -22,6 +22,7 @@
 
 
 #include <emmintrin.h>
+#include <stdint.h>
 #include <windows.h>
 #include "avisynth.h"
 
@@ -108,8 +109,8 @@ write_mmask_c(const int num_planes, const int mthresh, PVideoFrame& src,
         const int src_pitch = src->GetPitch(planes[p]);
         int prv_pitch = prev->GetPitch(planes[p]);
 
-        const BYTE* srcp = src->GetReadPtr(planes[p]);
-        BYTE* prvp = prev->GetWritePtr(planes[p]);
+        const uint8_t* srcp = src->GetReadPtr(planes[p]);
+        uint8_t* prvp = prev->GetWritePtr(planes[p]);
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -258,13 +259,13 @@ write_cmask_c(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
         const int src_pitch = src->GetPitch(planes[p]);
         const int dst_pitch = dst->GetPitch(planes[p]);
 
-        const BYTE* srcpc = src->GetReadPtr(planes[p]);
-        const BYTE* srcpb = srcpc + src_pitch;
-        const BYTE* srcpa = srcpb + src_pitch;
-        const BYTE* srcpd = srcpc + src_pitch;
-        const BYTE* srcpe = srcpc + src_pitch;
+        const uint8_t* srcpc = src->GetReadPtr(planes[p]);
+        const uint8_t* srcpb = srcpc + src_pitch;
+        const uint8_t* srcpa = srcpb + src_pitch;
+        const uint8_t* srcpd = srcpc + src_pitch;
+        const uint8_t* srcpe = srcpc + src_pitch;
 
-        BYTE* dstp = dst->GetWritePtr(planes[p]);
+        uint8_t* dstp = dst->GetWritePtr(planes[p]);
 
         memset(dstp, 0, dst_pitch * height);
 
@@ -364,7 +365,7 @@ check_combed_sse2(PVideoFrame& cmask, int n, int mi)
     const __m128i all1 = _mm_cmpeq_epi32(zero, zero);
     const __m128i one = _mm_set1_epi8((char)1);
 
-    __declspec(align(16)) __int64 array[2];
+    __declspec(align(16)) int64_t array[2];
     __m128i* arr = (__m128i*)array;
 
     is_combed[n] = 2;
@@ -404,7 +405,7 @@ check_combed_c(PVideoFrame& cmask, int n, int mi)
     const int pitch_0 = cmask->GetPitch(PLANAR_Y);
     const int pitch_1 = pitch_0 * 16;
 
-    const BYTE* srcp = cmask->GetReadPtr(PLANAR_Y);
+    const uint8_t* srcp = cmask->GetReadPtr(PLANAR_Y);
 
     is_combed[n] = 2;
 
