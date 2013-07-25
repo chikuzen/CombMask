@@ -158,11 +158,13 @@ How to detect combs (quoted from TFM - README.txt written by tritical)
 
     x = a - b -> -x = b - a
 
-    (d1 > cthresh && d2 > cthresh)    == !(d1 <= cthresh || d2 <= cthresh)
-                                      == !(d1 - cthresh <= 0 || d2 - cthresh <= 0)
+    (d1 > cthresh && d2 > cthresh)    == min(d1, d2) - cthresh > 0
+                                      == (c - max(b, d)) - cthresh > 0
 
-    (d1 < -cthresh && d2 < -cthresh)) == (-d1 > cthresh && -d2 > cthresh)
-                                      == !(-d1 - cthresh <= 0 || -d2 - cthresh <= 0)
+    (d1 < -cthresh && d2 < -cthresh)  == (-d1 > cthresh && -d2 > cthresh)
+                                      == min(-d1, -d2) - cthresh > 0
+                                      == min(b - c, d - c) - cthresh > 0
+                                      == (min(b, d) - c) - cthresh > 0
 
     !A || !B == !(A && B)
 
@@ -201,13 +203,11 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
                 __m128i xmm1 = _mm_load_si128(srcpb + x);
                 __m128i xmm2 = _mm_load_si128(srcpd + x);
 
-                __m128i xmm3 = _mm_or_si128(
-                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm0, xmm1), xcth)),
-                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm0, xmm2), xcth)));
+                __m128i xmm3 = _mm_subs_epu8(xmm0, _mm_max_epu8(xmm1, xmm2));
+                xmm3 = _mm_cmpeq_epi8(zero, _mm_subs_epu8(xmm3, xcth)); // !(d1 > cthresh && d2 > cthresh)
 
-                __m128i xmm4 = _mm_or_si128(
-                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm1, xmm0), xcth)),
-                    _mm_cmpeq_epi8(zero, _mm_subs_epu8(_mm_subs_epu8(xmm2, xmm0), xcth)));
+                __m128i xmm4 = _mm_subs_epu8(_mm_min_epu8(xmm1, xmm2), xmm0);
+                xmm4 = _mm_cmpeq_epi8(zero, _mm_subs_epu8(xmm4, xcth)); // !(d1 < -cthresh && d2 < -cthresh)
 
                 xmm3 = _mm_and_si128(xmm3, xmm4);
 
@@ -350,6 +350,9 @@ c_and_m_c(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 static void __stdcall
 check_combed_sse2(PVideoFrame& cmask, int n, int mi)
 {
+    if (is_combed[n] > 0) {
+        return;
+    }
     const int width = cmask->GetRowSize(PLANAR_Y) / RSIZE;
     const int height = cmask->GetHeight(PLANAR_Y) / 16;
     const int pitch_0 = cmask->GetPitch(PLANAR_Y) / RSIZE;
@@ -393,6 +396,9 @@ check_combed_sse2(PVideoFrame& cmask, int n, int mi)
 static void __stdcall
 check_combed_c(PVideoFrame& cmask, int n, int mi)
 {
+    if (is_combed[n] > 0) {
+        return;
+    }
     const int width = (cmask->GetRowSize(PLANAR_Y) / 8) * 8;
     const int height = cmask->GetHeight(PLANAR_Y) / 16;
     const int pitch_0 = cmask->GetPitch(PLANAR_Y);
