@@ -19,11 +19,6 @@ syntax:
         mthresh(0 to 255, default is 9):
             motion adaptive threshold.
 
-        mi(0 to 128, default is 40):
-            The # of combed pixels inside any of 8x16 size blocks on the Y-plane
-            for the frame to be detected as combed.
-            This information is used by MaskedMerge.
-
         sse2(default true):
             enable SSE2 intrinsic code(faster).
 
@@ -35,6 +30,11 @@ syntax:
         alt: alternate clip which will be merged to base.
 
         mask: mask clip.
+
+        MI(0 to 128, default is 40):
+            The # of combed pixels inside any of 8x16 size blocks on the Y-plane
+            for the frame to be detected as combed.
+            if the frame is not combed, merge process will be skipped.
 
         sse2(default true):
             enable SSE2 intrinsic code(a bit faster).
