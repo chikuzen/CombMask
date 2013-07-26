@@ -9,9 +9,16 @@ description:
     MaskedMerge is an exclusive masking filter for CombMask. This is often faster
     than MaskTools2's mt_merge().
 
+    IsCombed is a is a utility function that can be used within AviSynth's
+    conditionalfilter to test whether or not a frame is combed and returns true
+    if it is and false if it isn't.
+
+    These filters are written from scratch, but most of logics are come from
+    tritical's TIVTC plugin.
+
 
 syntax:
-    CombMask(clip, int cthresh, int mthresh, int mi, bool sse2)
+    CombMask(clip, int cthresh, int mthresh, bool chroma, bool sse2)
 
         cthresh(0 to 255, default is 6):
             spatial combing threshold.
@@ -19,11 +26,14 @@ syntax:
         mthresh(0 to 255, default is 9):
             motion adaptive threshold.
 
+        chroma(default is true):
+            Whether processing is performed to UV planes or not.
+
         sse2(default true):
             enable SSE2 intrinsic code(faster).
 
 
-    MaskedMerge(clip base, clip alt, clip mask, bool sse2)
+    MaskedMerge(clip base, clip alt, clip mask, int MI, bool chroma, bool sse2)
 
         base: base clip.
 
@@ -36,8 +46,22 @@ syntax:
             for the frame to be detected as combed.
             if the frame is not combed, merge process will be skipped.
 
+        chroma(default is true):
+            Whether processing is performed to UV planes or not.
+
         sse2(default true):
-            enable SSE2 intrinsic code(a bit faster).
+            same as CombMask.
+
+
+    IsCombed(clip, int cthresh, int mthresh,int MI, bool sse2)
+
+        cthresh: Same as CombMask.
+
+        mthresh: Same as CombMask.
+
+        MI: Same as MaskedMerge.
+
+        sse2: same as CombMask.
 
 
 usage:
@@ -51,12 +75,20 @@ usage:
     return last
 
 
+    LoadPlugin("CombMask.dll")
+    src = a_YV12_clip
+    combed = src.ConvertToYV16(interlaced=true)
+    nocomb = src.ConvertToYV16(interlaced=false)
+    ConditionalFilter(src, combed, nocomb, "IsCombed", "=", "true")
+
+
 reqirement:
 
     - Avisynth2.6alpha4 or later
     - WindowsXPsp3 / Vista / 7 / 8
     - Microsoft Visual C++ 2010 Redistributable Package
     - SSE2 capable CPU
+
 
 author:
     Oka Motofumi (chikuzen.mo at gmail dot com)
