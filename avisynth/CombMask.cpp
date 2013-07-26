@@ -34,6 +34,8 @@
 
 static const AVS_Linkage* AVS_linkage = 0;
 
+static const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
+
 
 /******************************************************************************
                                 CombMask
@@ -43,8 +45,6 @@ static void __stdcall
 write_mmask_sse2(int num_planes, int mthresh, PVideoFrame& src,
                  PVideoFrame& prev)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     const __m128i xmth = _mm_set1_epi8((char)mthresh);
     const __m128i zero = _mm_setzero_si128();
     const __m128i all1 = _mm_cmpeq_epi32(zero, zero);
@@ -100,8 +100,6 @@ static void __stdcall
 write_mmask_c(const int num_planes, const int mthresh, PVideoFrame& src,
               PVideoFrame& prev)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         int width = src->GetRowSize(planes[p]);
         const int height = src->GetHeight(planes[p]);
@@ -174,8 +172,6 @@ How to detect combs (quoted from TFM - README.txt written by tritical)
 static void __stdcall
 write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     const __m128i xcth = _mm_set1_epi8((char)cthresh);
     const __m128i xct6p = _mm_set1_epi16((short)(cthresh * 6));
     const __m128i xct6n = _mm_set1_epi16((short)(cthresh * -6));
@@ -252,8 +248,6 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
 static void __stdcall
 write_cmask_c(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         const int width = src->GetRowSize(planes[p]);
         const int height = src->GetHeight(planes[p]);
@@ -299,8 +293,6 @@ write_cmask_c(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
 static void __stdcall
 c_and_m_sse2(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         __m128i* cp = (__m128i*)cmask->GetWritePtr(planes[p]);
         const __m128i* mp = (__m128i*)mmask->GetReadPtr(planes[p]);
@@ -327,8 +319,6 @@ c_and_m_sse2(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 static void __stdcall
 c_and_m_c(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         unsigned* cmskp = (unsigned*)cmask->GetWritePtr(planes[p]);
         const unsigned* mmskp = (unsigned*)mmask->GetReadPtr(planes[p]);
@@ -352,8 +342,6 @@ c_and_m_c(int num_planes, PVideoFrame& cmask, PVideoFrame& mmask)
 static void __stdcall
 horizontal_dilation_sse2(int num_planes, PVideoFrame& mask, uint8_t* buff)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         int width = mask->GetRowSize(planes[p]);
         int height = mask->GetHeight(planes[p]);
@@ -381,8 +369,6 @@ horizontal_dilation_sse2(int num_planes, PVideoFrame& mask, uint8_t* buff)
 static void __stdcall
 horizontal_dilation_c(int num_planes, PVideoFrame& mask, uint8_t* buff)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         int height = mask->GetHeight(planes[p]);
         int width = mask->GetRowSize(planes[p]);
@@ -583,8 +569,6 @@ static void __stdcall
 merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt,
                   PVideoFrame& mask, PVideoFrame& dst)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         const __m128i* srcp = (__m128i*)src->GetReadPtr(planes[p]);
         const __m128i* altp = (__m128i*)alt->GetReadPtr(planes[p]);
@@ -623,8 +607,6 @@ static void __stdcall
 merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt,
                PVideoFrame& mask, PVideoFrame& dst)
 {
-    const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-
     for (int p = 0; p < num_planes; p++) {
         const unsigned* srcp = (unsigned*)src->GetReadPtr(planes[p]);
         const unsigned* altp = (unsigned*)alt->GetReadPtr(planes[p]);
