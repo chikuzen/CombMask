@@ -170,7 +170,8 @@ How to detect combs (quoted from TFM - README.txt written by tritical)
 */
 
 static void __stdcall
-write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
+write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst,
+                 IScriptEnvironment* env)
 {
     const __m128i xcth = _mm_set1_epi8((char)cthresh);
     const __m128i xct6p = _mm_set1_epi16((short)(cthresh * 6));
@@ -191,6 +192,9 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
         __m128i* dstp = (__m128i*)dst->GetWritePtr(planes[p]);
         const int dst_pitch = dst->GetPitch(planes[p]) / RSIZE;
 
+        if ((intptr_t)srcpc & 15) {
+            env->ThrowError("CombMask: INVALID MEMORY ALIGNMENT");
+        }
         memset(dstp, 0, dst_pitch * height * RSIZE);
 
         for (int y = 0; y < height; y++) {
@@ -246,7 +250,8 @@ write_cmask_sse2(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst
 
 
 static void __stdcall
-write_cmask_c(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst)
+write_cmask_c(int num_planes, int cthresh, PVideoFrame& src, PVideoFrame& dst,
+              IScriptEnvironment* env)
 {
     for (int p = 0; p < num_planes; p++) {
         const int width = src->GetRowSize(planes[p]);
@@ -398,7 +403,8 @@ class CombMask : public GenericVideoFilter {
     void (__stdcall *write_motion_mask)(int num_planes, int mthresh,
                                         PVideoFrame& src, PVideoFrame& prev);
     void (__stdcall *write_comb_mask)(int num_planes, int cthresh,
-                                      PVideoFrame& src, PVideoFrame& dst);
+                                      PVideoFrame& src, PVideoFrame& dst,
+                                      IScriptEnvironment* env);
     void (__stdcall *comb_and_motion)(int num_planes, PVideoFrame& cmask,
                                       PVideoFrame& mmask);
     void (__stdcall *horizontal_dilation)(int num_planes, PVideoFrame& mask,
@@ -467,7 +473,7 @@ PVideoFrame __stdcall CombMask::GetFrame(int n, IScriptEnvironment* env)
 {
     PVideoFrame src = child->GetFrame(n, env);
     PVideoFrame cmask = env->NewVideoFrame(vi);
-    write_comb_mask(num_planes, cthresh, src, cmask);
+    write_comb_mask(num_planes, cthresh, src, cmask, env);
 
     if (mthresh > 0) {
         PVideoFrame mmask = child->GetFrame(n == 0 ? 1 : n - 1, env);
@@ -497,7 +503,7 @@ create_combmask(AVSValue args, void* user_data, IScriptEnvironment* env)
 ******************************************************************************/
 
 static bool __stdcall
-check_combed_sse2(PVideoFrame& cmask, int mi)
+check_combed_sse2(PVideoFrame& cmask, int mi, IScriptEnvironment* env)
 {
     const int width = cmask->GetRowSize(PLANAR_Y) / RSIZE;
     const int height = cmask->GetHeight(PLANAR_Y) / 16;
@@ -505,6 +511,9 @@ check_combed_sse2(PVideoFrame& cmask, int mi)
     const int pitch_1 = pitch_0 * 16;
 
     const __m128i* srcp = (__m128i*)cmask->GetReadPtr(PLANAR_Y);
+    if ((intptr_t)srcp & 15) {
+        env->ThrowError("check_combed_sse2: INVALID MEMORY ALIGNMENT");
+    }
 
     const __m128i zero = _mm_setzero_si128();
     const __m128i all1 = _mm_cmpeq_epi32(zero, zero);
@@ -538,7 +547,7 @@ check_combed_sse2(PVideoFrame& cmask, int mi)
 
 
 static bool __stdcall
-check_combed_c(PVideoFrame& cmask, int mi)
+check_combed_c(PVideoFrame& cmask, int mi, IScriptEnvironment* env)
 {
     const int width = (cmask->GetRowSize(PLANAR_Y) / 8) * 8;
     const int height = cmask->GetHeight(PLANAR_Y) / 16;
@@ -567,13 +576,18 @@ check_combed_c(PVideoFrame& cmask, int mi)
 
 static void __stdcall
 merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt,
-                  PVideoFrame& mask, PVideoFrame& dst)
+                  PVideoFrame& mask, PVideoFrame& dst,
+                  IScriptEnvironment* env)
 {
     for (int p = 0; p < num_planes; p++) {
         const __m128i* srcp = (__m128i*)src->GetReadPtr(planes[p]);
         const __m128i* altp = (__m128i*)alt->GetReadPtr(planes[p]);
         const __m128i* mskp = (__m128i*)mask->GetReadPtr(planes[p]);
         __m128i* dstp = (__m128i*)dst->GetWritePtr(planes[p]);
+
+        if (((intptr_t)srcp | (intptr_t)altp | (intptr_t)mskp) & 15) {
+            env->ThrowError("MaskedMerge: INVALID MEMORY ALIGNMENT");
+        }
 
         int width = (src->GetRowSize(planes[p]) + RSIZE - 1) / RSIZE;
         int height = src->GetHeight(planes[p]);
@@ -605,7 +619,8 @@ merge_frames_sse2(int num_planes, PVideoFrame& src, PVideoFrame& alt,
 
 static void __stdcall
 merge_frames_c(int num_planes, PVideoFrame& src, PVideoFrame& alt,
-               PVideoFrame& mask, PVideoFrame& dst)
+               PVideoFrame& mask, PVideoFrame& dst,
+               IScriptEnvironment* env)
 {
     for (int p = 0; p < num_planes; p++) {
         const unsigned* srcp = (unsigned*)src->GetReadPtr(planes[p]);
@@ -641,11 +656,12 @@ class MaskedMerge : public GenericVideoFilter {
     int mi;
     int num_planes;
 
-    bool (__stdcall *check_combed)(PVideoFrame& cmask, int mi);
+    bool (__stdcall *check_combed)(PVideoFrame& cmask, int mi,
+                                   IScriptEnvironment* env);
 
     void (__stdcall *merge_frames)(int mum_planes, PVideoFrame& src,
                                    PVideoFrame& alt, PVideoFrame& mask,
-                                   PVideoFrame& dst);
+                                   PVideoFrame& dst, IScriptEnvironment* env);
 
 public:
     MaskedMerge(PClip c, PClip a, PClip m, int _mi, bool chroma, bool sse2,
@@ -692,14 +708,14 @@ PVideoFrame __stdcall MaskedMerge::GetFrame(int n, IScriptEnvironment* env)
 {
     PVideoFrame src = child->GetFrame(n, env);
     PVideoFrame mask = maskc->GetFrame(n, env);
-    if (mi > 0 && !check_combed(mask, mi)) {
+    if (mi > 0 && !check_combed(mask, mi, env)) {
         return src;
     }
 
     PVideoFrame alt = altc->GetFrame(n, env);
     PVideoFrame dst = env->NewVideoFrame(vi);
 
-    merge_frames(num_planes, src, alt, mask, dst);
+    merge_frames(num_planes, src, alt, mask, dst, env);
 
     if (num_planes == 1 && !vi.IsY8()) {
         const int src_pitch = src->GetPitch(PLANAR_U);
@@ -754,8 +770,8 @@ create_iscombed(AVSValue args, void* user_data, IScriptEnvironment* env)
     CombMask *cm = new CombMask(args[0].AsClip(), args[1].AsInt(6),
                                 args[2].AsInt(9), false, sse2, false, env);
 
-    AVSValue is_combed = sse2 ? check_combed_sse2(cm->GetFrame(n, env), mi) :
-                                check_combed_c(cm->GetFrame(n, env), mi);
+    AVSValue is_combed = sse2 ? check_combed_sse2(cm->GetFrame(n, env), mi, env) :
+                                check_combed_c(cm->GetFrame(n, env), mi, env);
 
     delete cm;
 
