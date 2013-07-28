@@ -63,13 +63,13 @@ write_mmask_sse2(int num_planes, int mthresh, PVideoFrame& src,
                 __m128i xmm0 = _mm_load_si128(srcp + x);
                 __m128i xmm1 = _mm_load_si128(prevp + x);
 
-                __m128i xmm2 = _mm_subs_epu8(xmm0, xmm1);
-                xmm1 = _mm_subs_epu8(xmm1, xmm0);
-                xmm0 = _mm_or_si128(xmm1, xmm2);
-                xmm1 = _mm_subs_epu8(xmm0, xmth);
-                xmm1 = _mm_cmpeq_epi8(xmm1, zero);
-                xmm1 = _mm_andnot_si128(xmm1, all1);
-                _mm_store_si128(prevp + x, xmm1);
+                __m128i xmm2 = _mm_max_epu8(xmm0, xmm1);
+                xmm0 = _mm_min_epu8(xmm0, xmm1);
+                xmm2 = _mm_subs_epu8(xmm2, xmm0);
+                xmm2 = _mm_subs_epu8(xmm2, xmth);
+                xmm2 = _mm_cmpeq_epi8(xmm2, zero);
+                xmm2 = _mm_xor_si128(xmm2, all1);
+                _mm_store_si128(prevp + x, xmm2);
             }
             srcp += src_pitch;
             prevp += prev_pitch;
