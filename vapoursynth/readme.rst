@@ -72,7 +72,7 @@ on unix like system(include mingw), type as follows::
     $ ./configure
     $ make install
 
-    if you want to use msvc++, then
+if you want to use msvc++, then::
 
     - rename all *.c to *.cpp
     - create vcxproj yourself
