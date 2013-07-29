@@ -26,8 +26,8 @@
 
 
 static void CM_FUNC_ALIGN VS_CC
-merge_frames_all(maskedmerge_t *mh, const VSAPI *vsapi,
-                 const VSFrameRef *mask, const VSFrameRef *alt, VSFrameRef *dst)
+merge_frames_all(maskedmerge_t *mh, const VSAPI *vsapi, const VSFrameRef *mask,
+                 const VSFrameRef *alt, VSFrameRef *dst)
 {
     int err;
     int is_combed = vsapi->propGetInt(vsapi->getFramePropsRO(mask), "_Combed",

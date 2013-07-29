@@ -4,11 +4,11 @@ CombMask - VapourSynth plugin
 
 CombMask is a simple filter set for create comb mask and merge clips.
 
-All functions support 8/9/10/16bit integer planar formats.
+Both functions support 8/9/10/16bit integer planar formats.
 
 CombMask:
 --------
-Create a binary(0 and maximum value) combmask clip::
+Create a binary(0 and maximum value) combmask clip. '_Combed' prop is set to all the frames.::
 
     comb.CombMask(clip clip[, int cthresh, int mthresh, int mi, int[] planes])
 
@@ -16,7 +16,7 @@ cthresh - spatial combing threshold. default is 6(8bit), 12(9bit), 24(10bit) or 
 
 mthresh - motion adaptive threshold. default is 9, 18, 36 or 2304.
 
-mi - The # of combed pixels inside any of 8x16 size blocks on a plane for the frame to be detected as combed. value range is between 0 and 128. Default is 40.
+mi - The # of combed pixels inside any of 8x16 size blocks on a plane for the frame to be detected as combed. If number of combed pixels is over this value, _Combed prop will be set to the mask as true. Value range is between 0 and 128. Default is 40.
 
 planes - Choose which planes to process. default will process all planes. Allowed values are 0, 1, and 2.::
 
@@ -28,9 +28,15 @@ planes - Choose which planes to process. default will process all planes. Allowe
     planes=[0]    = processes the Y or R plane only.
     planes=[1,2]  = processes the U V or G B planes only.
 
+note: The metric of combing detection is similler to IsCombedTIVTC(metric=0) by Kevin Stone(aka. tritical).
+
 CMaskedMerge:
 -------------
-An exclusive masking filter for CombMask. This is often faster than std.MaskedMerge()::
+An exclusive masking filter for CombMask. 
+
+This filter can process only binary(0 and maximum value) mask, and skip merging process if the mask says '_Combed is false'.
+
+Therefore, this filter is faster than std.MaskedMerge() if 'mask' is created by CombMask()::
 
     comb.CMaskedMerge(clip base, clip alt, clip mask[, int[] planes])
 
@@ -40,9 +46,9 @@ alt - alternate clip which will be merged to base.
 
 mask - mask clip.
 
-planes - same as Minimum.
+planes - same as CombMask.
 
-note that base, alt and mask must be the same format/resolution.
+note: base, alt and mask must be the same format/resolution.
 
 Examples:
 ---------
@@ -71,7 +77,7 @@ on unix like system(include mingw), type as follows::
     - rename all *.c to *.cpp
     - create vcxproj yourself
 
-this plugin requires SSE2 capable cpu. Thus ARM and PowerPC are unsupported.
+This plugin requires SSE2 capable cpu. Thus ARM and PowerPC are unsupported.
 
 Source code:
 ------------

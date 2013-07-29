@@ -42,7 +42,7 @@ write_combmask_8bit(combmask_t *ch, const VSAPI *vsapi, const VSFrameRef *src,
         int height = vsapi->getFrameHeight(src, p);
         int stride = vsapi->getStride(src, p) / 16;
 
-        if (ch->planes[p] == 0) {
+        if (ch->planes[p] == 0 || height < 3) {
             memset(dstp, 0, stride * height * 16);
             continue;
         }
@@ -129,7 +129,7 @@ write_combmask_9_10(combmask_t *ch, const VSAPI *vsapi, const VSFrameRef *src,
         int height = vsapi->getFrameHeight(src, p);
         int stride = vsapi->getStride(cmask, p) / 16;
 
-        if (ch->planes[p] == 0) {
+        if (ch->planes[p] == 0 || height < 3) {
             memset(dstp, 0, stride * height * 16);
             continue;
         }
@@ -203,7 +203,7 @@ write_combmask_16bit(combmask_t *ch, const VSAPI *vsapi, const VSFrameRef *src,
         int height = vsapi->getFrameHeight(src, p);
         int stride = vsapi->getStride(cmask, p) / 16;
 
-        if (ch->planes[p] == 0) {
+        if (ch->planes[p] == 0 || height < 3) {
             memset(dstp, 0, stride * height * 16);
             continue;
         }
