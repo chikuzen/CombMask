@@ -52,16 +52,29 @@ note: base, alt and mask must be the same format/resolution.
 
 Examples:
 ---------
-    >>> import vapoursynth as vs
-    >>> core = vs.get_core()
-    >>> core.std.LoadPlugin('/path/to/combmask.dll')
-    >>> core.std.LoadPlugin('/path/to/vivtc.dll')
-    >>> core.std.LoadPlugin('/path/to/eedi3.dll')
-    >>> clip = something
-    >>> base = core.vivtc.VFM(clip, 1)
-    >>> alt = core.eedi3.eedi3(clip, 1)
-    >>> mask = core.comb.CombMask(base)
-    >>> merge = core.comb.CMaskedMerge(base, alt, mask)
+::
+
+    import vapoursynth as vs
+    core = vs.get_core()
+    core.std.LoadPlugin('/path/to/combmask.dll')
+    core.std.LoadPlugin('/path/to/vivtc.dll')
+    core.std.LoadPlugin('/path/to/eedi3.dll')
+    clip = something
+    base = core.vivtc.VFM(clip, 1)
+    alt = core.eedi3.eedi3(clip, 1)
+    mask = core.comb.CombMask(base)
+    
+    # merge two clips
+    merged = core.comb.CMaskedMerge(base, alt, mask)
+    
+    # replace only comed frames
+    def func(n, f):
+        if f.props._Combed == True:
+            return 1
+        return 0
+
+    replaced = core.std.SelectClip(clips=[base, alt], src=mask, selector=func)
+
 
 How to compile:
 ---------------

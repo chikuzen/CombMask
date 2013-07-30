@@ -28,23 +28,24 @@
 
 
 static void CM_FUNC_ALIGN VS_CC
-vertical_proc(__m128i *orig, int width, int height)
+vertical_proc(__m128i *center, int width, int height, __m128i *dst)
 {
-    __m128i *center = orig + width;
-    __m128i *bottom = center + width;
+    __m128i *top = center + width;
+    __m128i *bottom = top;
 
-    for (int y = 1; y < height - 1; y++) {
+    for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            __m128i xmm0 = _mm_load_si128(orig + x);
+            __m128i xmm0 = _mm_load_si128(top + x);
             __m128i xmm1 = _mm_load_si128(center + x);
             __m128i xmm2 = _mm_load_si128(bottom + x);
-            xmm0 = _mm_and_si128(xmm0, xmm2);
+            xmm0 = _mm_or_si128(xmm0, xmm2);
             xmm1 = _mm_or_si128(xmm1, xmm0);
-            _mm_store_si128(center + x, xmm1);
+            _mm_store_si128(dst + x, xmm1);
         }
-        orig += width;
-        center += width;
-        bottom += width;
+        top = center;
+        center = bottom;
+        bottom = y < height - 2 ? bottom + width : bottom - width;
+        dst += width;
     }
 }
 
@@ -147,29 +148,27 @@ adapt_motion_all(combmask_t *ch, const VSAPI *vsapi, const VSFrameRef *src,
         int width = (vsapi->getFrameWidth(cmask, p) + adjust - 1) / adjust;
         int height = vsapi->getFrameHeight(cmask, p);
 
-        __m128i *mmask = (__m128i *)_aligned_malloc(width * height * 16, 16);
-        
-        ch->write_motionmask(ch->mthresh, width, height, stride, mmask,
+        __m128i *mmtemp = (__m128i *)_aligned_malloc(width * height * 16 * 2, 16);
+        __m128i *mmaskp = mmtemp + width * height;
+
+        ch->write_motionmask(ch->mthresh, width, height, stride, mmtemp,
                              (__m128i *)vsapi->getReadPtr(src, p),
                              (__m128i *)vsapi->getReadPtr(prev, p));
-        
-        vertical_proc(mmask, width, height);
+        vertical_proc(mmtemp, width, height, mmaskp);
 
-        __m128i *cp = (__m128i *)vsapi->getWritePtr(cmask, p);
-        const __m128i *mp = mmask;
+        __m128i *cmaskp = (__m128i *)vsapi->getWritePtr(cmask, p);
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                __m128i xmm0 = _mm_load_si128(cp + x);
-                __m128i xmm1 = _mm_load_si128(mp + x);
+                __m128i xmm0 = _mm_load_si128(cmaskp + x);
+                __m128i xmm1 = _mm_load_si128(mmaskp + x);
                 xmm0 = _mm_and_si128(xmm0, xmm1);
-                _mm_store_si128(cp + x, xmm0);
+                _mm_store_si128(cmaskp + x, xmm0);
             }
-            cp += stride;
-            mp += width;
+            cmaskp += stride;
+            mmaskp += width;
         }
-
-        _aligned_free(mmask);
+        _aligned_free(mmtemp);
     }
 }
 
