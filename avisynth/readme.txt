@@ -125,10 +125,15 @@ syntax:
 
 note:
 
-	- CombMask_avx2.dll is compiled with /arch:AVX2.
-	- On Avisynth2.6, AVX2 can not to be enabled even if you use CombMask_avx2.dll.
-	- On Avisynth+MT, CombMask and MaskedMerge are set as MT_NICE_FILTER automatically.
-
+    - CombMask_avx2.dll is compiled with /arch:AVX2.
+    
+    - On Avisynth2.6, AVX2 can not to be enabled even if you use CombMask_avx2.dll.
+    
+    - On Avisynth+MT, CombMask and MaskedMerge are set as MT_NICE_FILTER automatically.
+    
+    - This plugin's filters require appropriate memory alignments.
+      Thus, if you want to crop the left side of your source clip before these filters,
+      you have to set crop(align=true).
 
 usage:
 
