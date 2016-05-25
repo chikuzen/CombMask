@@ -1,4 +1,4 @@
-CombMask - Combmask create filter for Avisynth2.6x
+CombMask - Combmask create filter for Avisynth2.6x/Avisynth+
 
 
 description:
@@ -18,22 +18,61 @@ description:
 
 
 syntax:
-    CombMask(clip, int cthresh, int mthresh, bool chroma, bool sse2)
+    CombMask(clip, int "cthresh", int "mthresh", bool "chroma", bool "expand",
+             int "metric", int opt)
 
-        cthresh(0 to 255, default is 6):
+        cthresh:
             spatial combing threshold.
+            0 to 255, default is 6 (metric=0)
+            0 to 65025, default is 10 (metric=1)
 
-        mthresh(0 to 255, default is 9):
+        mthresh:
             motion adaptive threshold.
+            0 to 255, default is 9.
 
-        chroma(default is true):
+        chroma:
             Whether processing is performed to UV planes or not.
+            default is true.
 
-        sse2(default true):
-            enable SSE2 intrinsic code(faster).
+        expand:
+            When set this to true, left and right pixels of combed pixel also
+            assumed to combed.
+            default is true.
+
+        metric:
+            Sets which spatial combing metric is used to detect combed pixels.
+            Possible options:
+
+              Assume 5 neighboring pixels (a,b,c,d,e) positioned vertically.
+
+                    a
+                    b
+                    c
+                    d
+                    e
+
+            0:  d1 = c - b;
+                d2 = c - d;
+                if ((d1 > cthresh && d2 > cthresh) || (d1 < -cthresh && d2 < -cthresh))
+                {
+                   if (abs(a+4*c+e-3*(b+d)) > cthresh*6) it's combed;
+                }
+
+            1:  val = (b - c) * (d - c);
+                if (val > cthresh) it's combed;
+
+            default is 0.
+
+        opt:
+            specify which CPU optimization are used.
+            0 - Use C++ routine.
+            1 - Use SSE2 routin if possible. When SSE2 can't be used, fallback to 0.
+            others(default) - Use AVX2 routine if possible.
+                              When AVX2 can't be used, fallback to 1.
 
 
-    MaskedMerge(clip base, clip alt, clip mask, int MI, bool chroma, bool sse2)
+    MaskedMerge(clip base, clip alt, clip mask, int "MI", int "blockx", int "blocky",
+                bool "chroma", int opt)
 
         base: base clip.
 
@@ -41,19 +80,33 @@ syntax:
 
         mask: mask clip.
 
-        MI(0 to 128, default is 40):
-            The # of combed pixels inside any of 8x16 size blocks on the Y-plane
+        MI(0 to blockx*blocky , default is 80):
+            The # of combed pixels inside any of blockx * blocky size blocks on the Y-plane
             for the frame to be detected as combed.
             if the frame is not combed, merge process will be skipped.
 
-        chroma(default is true):
-            Whether processing is performed to UV planes or not.
+        blockx:
+            Sets the x-axis size of the window used during combed frame detection. This has
+            to do with the size of the area in which MI number of pixels are required to be
+            detected as combed for a frame to be declared combed.
+            Possible values are 8, 16(default) or 32.
 
-        sse2(default true):
+        blockx:
+            Sets the y-axis size of the window used during combed frame detection. This has
+            to do with the size of the area in which MI number of pixels are required to be
+            detected as combed for a frame to be declared combed.
+            Possible values are 8, 16(default) or 32.
+
+        chroma:
+            Whether processing is performed to UV planes or not.
+            Default is true.
+
+        opt:
             same as CombMask.
 
 
-    IsCombed(clip, int cthresh, int mthresh,int MI, bool sse2)
+    IsCombed(clip, int "cthresh", int "mthresh",int "MI", int "blockx", int "blocky",
+             int "metric", int "opt")
 
         cthresh: Same as CombMask.
 
@@ -61,7 +114,20 @@ syntax:
 
         MI: Same as MaskedMerge.
 
-        sse2: same as CombMask.
+        blockx: Same as MaskedMerge.
+
+        blockx: Same as MaskedMerge.
+
+        metric: Same as CombMask.
+
+        opt: same as CombMask.
+
+
+note:
+
+	- CombMask_avx2.dll is compiled with /arch:AVX2.
+	- On Avisynth2.6, AVX2 can not to be enabled even if you use CombMask_avx2.dll.
+	- On Avisynth+MT, CombMask and MaskedMerge are set as MT_NICE_FILTER automatically.
 
 
 usage:
@@ -84,9 +150,9 @@ usage:
 
 reqirement:
 
-    - Avisynth2.6alpha4 or later
-    - WindowsXPsp3 / Vista / 7 / 8
-    - Microsoft Visual C++ 2010 Redistributable Package
+    - Avisynth2.60 or later / Avisynth+ r1578 or greater.
+    - Windows Vista sp2 / 7 sp1 / 8.1 / 10.
+    - Microsoft Visual C++ 2015 Redistributable Package
     - SSE2 capable CPU
 
 

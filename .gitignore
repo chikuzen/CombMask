@@ -1,0 +1,12 @@
+*.dll
+*.exe
+*.sln
+*.db
+*.opendb
+*.filters
+*.user
+avisynth/vs2015/.vs/*
+avisynth/vs2015/Debug/*
+avisynth/vs2015/Release/*
+avisynth/vs2015/x64/*
+avisynth/archives/*
