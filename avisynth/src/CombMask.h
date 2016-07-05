@@ -10,7 +10,7 @@
 #include <windows.h>
 #include <avisynth.h>
 
-#define CMASK_VERSION "1.0.0"
+#define CMASK_VERSION "1.1.0"
 
 
 typedef IScriptEnvironment ise_t;
@@ -23,11 +23,23 @@ enum arch_t {
 };
 
 
+class Buffer {
+    ise_t* env;
+    bool isPlus;
+    void* orig;
+public:
+    uint8_t* buffp;
+    Buffer(size_t pitch, int height, int hsize, size_t align, bool ip, ise_t* e);
+    ~Buffer();
+};
+
+
 class GVFmod : public GenericVideoFilter {
 protected:
     bool isPlus;
     int numPlanes;
     size_t align;
+
     GVFmod(PClip c, bool chroma, arch_t a, bool ip) :
         GenericVideoFilter(c), align(a == USE_AVX2 ? 32 : 16), isPlus(ip) 
     {
@@ -40,7 +52,9 @@ class CombMask : public GVFmod {
     int cthresh;
     int mthresh;
     bool expand;
+    bool needBuff;
     size_t buffPitch;
+    Buffer* buff;
 
     void (__stdcall *writeCombMask)(
         uint8_t* dstp, const uint8_t* srcp, const int dpitch, const int cpitch,
@@ -62,7 +76,7 @@ class CombMask : public GVFmod {
 public:
     CombMask(PClip c, int cth, int mth, bool chroma, arch_t arch, bool expand,
              int metric, bool is_avsplus);
-    ~CombMask() {}
+    ~CombMask();
     PVideoFrame __stdcall GetFrame(int n, ise_t* env);
 };
 

@@ -155,7 +155,7 @@ usage:
 
 reqirement:
 
-    - Avisynth2.60 or later / Avisynth+ r1578 or greater.
+    - Avisynth2.60 or later / Avisynth+ r2005 or greater.
     - Windows Vista sp2 / 7 sp1 / 8.1 / 10.
     - Microsoft Visual C++ 2015 Redistributable Package
     - SSE2 capable CPU

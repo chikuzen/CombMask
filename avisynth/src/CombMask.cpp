@@ -342,9 +342,27 @@ expand_mask_simd(uint8_t* dstp, uint8_t* srcp, const int dpitch,
 }
 
 
+Buffer::Buffer(size_t pitch, int height, int hsize, size_t align, bool ip,
+    ise_t* e) :
+    env(e), isPlus(ip)
+{
+    size_t size = pitch * height * hsize + align;
+    orig = alloc_buffer(size, align, isPlus, env);
+    buffp = reinterpret_cast<uint8_t*>(orig) + align;
+}
+
+
+Buffer::~Buffer()
+{
+    free_buffer(orig, isPlus, env);
+}
+
+
+
 CombMask::CombMask(PClip c, int cth, int mth, bool ch, arch_t arch, bool e,
                    int metric, bool plus) :
-    GVFmod(c, ch, arch, plus), cthresh(cth), mthresh(mth), expand(e)
+    GVFmod(c, ch, arch, plus), cthresh(cth), mthresh(mth), expand(e),
+    buff(nullptr)
 {
     validate(!vi.IsPlanar(), "planar format only.");
     validate(metric != 0 && metric != 1, "metric must be set to 0 or 1.");
@@ -363,6 +381,7 @@ CombMask::CombMask(PClip c, int cth, int mth, bool ch, arch_t arch, bool e,
         buffPitch += 2;
     }
     buffPitch &= (~(align - 1));
+    needBuff = mthresh > 0 || expand;
 
     switch (arch) {
 #if defined(__AVX2__)
@@ -391,33 +410,24 @@ CombMask::CombMask(PClip c, int cth, int mth, bool ch, arch_t arch, bool e,
     if (mthresh > 0 && child->SetCacheHints(CACHE_GET_WINDOW, 0) < 3) {
         child->SetCacheHints(CACHE_WINDOW, 3);
     }
+
+    if (!isPlus && needBuff) {
+        buff = new Buffer(buffPitch, vi.height, mthresh > 0 ? 2 : 1, align,
+                          false, nullptr);
+
+    }
 }
 
 
-
-class Buffer {
-    ise_t* env;
-    bool isPlus;
-    void* orig;
-public:
-    uint8_t* buffp;
-
-    Buffer(size_t pitch, int height, int hsize, size_t align, bool ip, ise_t* e) :
-        env(e), isPlus(ip)
-    {
-        size_t size = pitch * height * hsize + align;
-        orig = alloc_buffer(size, align, isPlus, env);
-        buffp = reinterpret_cast<uint8_t*>(orig) + align;
+CombMask::~CombMask()
+{
+    if (!isPlus && needBuff) {
+        delete buff;
     }
-
-    ~Buffer()
-    {
-        free_buffer(orig, isPlus, env);
-    }
-};
+}
 
 
-PVideoFrame __stdcall CombMask::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall CombMask::GetFrame(int n, ise_t* env)
 {
     static const int planes[] = { PLANAR_Y, PLANAR_U, PLANAR_V };
 
@@ -428,11 +438,13 @@ PVideoFrame __stdcall CombMask::GetFrame(int n, IScriptEnvironment* env)
 
     PVideoFrame dst = env->NewVideoFrame(vi, align);
 
-    Buffer* b = nullptr;
-    uint8_t *buffp = nullptr, *tmpp = nullptr;
-    if (mthresh > 0 || expand) {
-        b = new Buffer(buffPitch, vi.height, mthresh > 0 ? 2 : 1, align,
-                       isPlus, env);
+    Buffer* b = buff;
+    uint8_t *buffp, *tmpp;
+    if (needBuff) {
+        if (isPlus) {
+            b = new Buffer(buffPitch, vi.height, mthresh > 0 ? 2 : 1, align,
+                           isPlus, env);
+        }
         buffp = b->buffp;
         tmpp = buffp + vi.height * buffPitch;
     }
@@ -447,7 +459,7 @@ PVideoFrame __stdcall CombMask::GetFrame(int n, IScriptEnvironment* env)
         const int width = src->GetRowSize(plane);
         const int height = src->GetHeight(plane);
 
-        if (b == nullptr) {
+        if (!needBuff) {
             writeCombMask(dstp, srcp, dpitch, spitch, cthresh, width, height);
             continue;
         }
@@ -473,7 +485,7 @@ PVideoFrame __stdcall CombMask::GetFrame(int n, IScriptEnvironment* env)
         expandMask(dstp, buffp, dpitch, buffPitch, width, height);
     }
 
-    if (b != nullptr) {
+    if (isPlus && needBuff) {
         delete b;
     }
 
