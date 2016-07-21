@@ -10,7 +10,7 @@
 #include <windows.h>
 #include <avisynth.h>
 
-#define CMASK_VERSION "1.1.0"
+#define CMASK_VERSION "1.1.1"
 
 
 typedef IScriptEnvironment ise_t;
@@ -43,7 +43,11 @@ protected:
     GVFmod(PClip c, bool chroma, arch_t a, bool ip) :
         GenericVideoFilter(c), align(a == USE_AVX2 ? 32 : 16), isPlus(ip) 
     {
-        numPlanes = vi.IsY8() || !chroma ? 1 : 3;
+        numPlanes = (vi.IsY8() || !chroma) ? 1 : 3;
+    }
+    int __stdcall SetCacheHints(int hints, int)
+    {
+        return hints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
     }
 };
 

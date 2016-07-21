@@ -31,14 +31,14 @@ create_combmask(AVSValue args, void* user_data, ise_t* env)
     int mth = args[MTHRESH].AsInt(9);
     bool ch = args[CHROMA].AsBool(true);
     bool expand = args[EXPAND].AsBool(true);
-    bool is_avsplus = user_data != nullptr;
+    bool is_avsplus = env->FunctionExists("SetFilterMTMode");
     arch_t arch = get_arch(args[OPT].AsInt(-1), is_avsplus);
 
     try{
         return new CombMask(clip, cth, mth, ch, arch, expand, metric, is_avsplus);
 
     } catch (std::runtime_error& e) {
-        env->ThrowError((std::string("CombMask: ") + e.what()).c_str());
+        env->ThrowError("CombMask: %s", e.what());
     }
 
     return 0;
@@ -46,7 +46,7 @@ create_combmask(AVSValue args, void* user_data, ise_t* env)
 
 
 static AVSValue __cdecl
-create_maskedmerge(AVSValue args, void* user_data, IScriptEnvironment* env)
+create_maskedmerge(AVSValue args, void*, IScriptEnvironment* env)
 {
     enum { BASE, ALT, MASK, MI, BLOCKX, BLOCKY, CHROMA, OPT };
     try {
@@ -62,19 +62,19 @@ create_maskedmerge(AVSValue args, void* user_data, IScriptEnvironment* env)
         int bx = args[BLOCKX].AsInt(8);
         int by = args[BLOCKY].AsInt(8);
         bool ch = args[CHROMA].AsBool(true);
-        bool is_avsplus = user_data != nullptr;
+        bool is_avsplus = env->FunctionExists("SetFilterMTMode");
         arch_t arch = get_arch(args[OPT].AsInt(-1), is_avsplus);
 
         return new MaskedMerge(base, alt, mask, mi, bx, by, ch, arch, is_avsplus);
     } catch (std::runtime_error& e) {
-        env->ThrowError((std::string("MaskedMerge: ") + e.what()).c_str());
+        env->ThrowError("MaskedMerge: %s", e.what());
     }
     return 0;
 }
 
 
 static AVSValue __cdecl
-create_iscombed(AVSValue args, void* user_data, ise_t* env)
+create_iscombed(AVSValue args, void*, ise_t* env)
 {
     enum { CLIP, CTHRESH, MTHRESH, MI, BLOCKX, BLOCKY, METRIC, OPT };
     CombMask* cm = nullptr;
@@ -92,7 +92,7 @@ create_iscombed(AVSValue args, void* user_data, ise_t* env)
         int mi = args[MI].AsInt(80);
         int blockx = args[BLOCKX].AsInt(16);
         int blocky = args[BLOCKY].AsInt(16);
-        bool is_avsplus = user_data != nullptr;
+        bool is_avsplus = env->FunctionExists("SetFilterMTMode");
         arch_t arch = get_arch(args[OPT].AsInt(-1), is_avsplus);
 
         validate(mi < 0 || mi > 128, "MI must be between 0 and 128.");
@@ -112,7 +112,7 @@ create_iscombed(AVSValue args, void* user_data, ise_t* env)
 
     } catch (std::runtime_error& e) {
         if (cm) delete cm;
-        env->ThrowError((std::string("IsCombed: ") + e.what()).c_str());
+        env->ThrowError("IsCombed: %s", e.what());
     }
     return 0;
 }
@@ -132,26 +132,17 @@ AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors)
 {
     AVS_linkage = vectors;
 
-    void* is_avsplus = env->FunctionExists("SetFilterMTMode") ? "true" : nullptr;
-
     env->AddFunction(
         "CombMask", "c[cthresh]i[mthresh]i[chroma]b[expand]b[metric]i[opt]i",
-        create_combmask, is_avsplus);
+        create_combmask, nullptr);
     env->AddFunction(
         "MaskedMerge",
         "[base]c[alt]c[mask]c[MI]i[blockx]i[blocky]i[chroma]b[opt]i",
-        create_maskedmerge, is_avsplus);
+        create_maskedmerge, nullptr);
     env->AddFunction(
         "IsCombed",
         "c[cthresh]i[mthresh]i[MI]i[blockx]i[blocky]i[metric]i[opt]i",
-        create_iscombed, is_avsplus);
-
-    if (is_avsplus != nullptr) {
-        auto env2 = static_cast<IScriptEnvironment2*>(env);
-        env2->SetFilterMTMode("CombMask", MT_NICE_FILTER, true);
-        env2->SetFilterMTMode("MaskedMerge", MT_NICE_FILTER, true);
-        env2->SetFilterMTMode("IsCombed", MT_SERIALIZED, true);
-    }
+        create_iscombed, nullptr);
 
     return "CombMask filter for Avisynth2.6/Avisynth+ version " CMASK_VERSION;
 }
