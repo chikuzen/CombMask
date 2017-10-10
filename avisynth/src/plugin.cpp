@@ -133,14 +133,14 @@ AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors)
     AVS_linkage = vectors;
 
     env->AddFunction(
-        "CombMask", "c[cthresh]i[mthresh]i[chroma]b[expand]b[metric]i[opt]i",
+        "CombMask2", "c[cthresh]i[mthresh]i[chroma]b[expand]b[metric]i[opt]i",
         create_combmask, nullptr);
     env->AddFunction(
-        "MaskedMerge",
+        "MaskedMerge2",
         "[base]c[alt]c[mask]c[MI]i[blockx]i[blocky]i[chroma]b[opt]i",
         create_maskedmerge, nullptr);
     env->AddFunction(
-        "IsCombed",
+        "IsCombed2",
         "c[cthresh]i[mthresh]i[MI]i[blockx]i[blocky]i[metric]i[opt]i",
         create_iscombed, nullptr);
 
